@@ -1,0 +1,419 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "AI ATS CV Generator",
+        "formDescription": "Upload your current CV and optionally provide the job description you are targeting. AI will optimize your resume for ATS systems while preserving your real experience and qualifications.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Full Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Desired Job Title",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Job Description",
+              "fieldType": "textarea",
+              "placeholder": "Paste the job description you are targeting (optional)"
+            },
+            {
+              "fieldLabel": "Upload CV",
+              "fieldType": "file",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "respondWith": "redirect",
+              "redirectUrl": "https://generated-image.s3.ap-south-1.amazonaws.com/pdfs/260726/e3b5c362-de96-4fda-8ee9-76e667d5d317.pdf"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "535a6bc9-6deb-4e07-b417-adf6e2ea6dbd",
+      "name": "On form submission",
+      "webhookId": "c062da11-380c-41a4-81bc-6ab46b00f986"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "Upload_CV",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "951d70f4-2249-4687-bfb8-0ab29888a38d",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\n\nconst fullText = items\n  .map(item => item.json.text || \"\")\n  .join(\"\\n\\n\");\n\n\nconst chunkSize = 10000;\nconst overlap = 500;\n\nconst output = [];\n\nfor (let i = 0; i < fullText.length; i += (chunkSize - overlap)) {\n  output.push({\n    json: {\n      chunk: fullText.substring(i, i + chunkSize),\n      index: output.length + 1,\n    },\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "c1b8e73b-8f5a-477a-88d4-72310d6cfd83",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "079d539a-7af9-42c9-b5a8-8b96b3fbd9a0",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chunk }}",
+        "options": {
+          "systemMessage": "=Resume chunk:\n\n{{ $json.chunk }}\n\nTarget Job Description (optional):\n\n{{ $('On form submission').first().json[\"Job Description\"] }}\n\nOptimize this resume chunk specifically for the target job description when one is provided.\n\nDo not invent any skills, experience, qualifications, achievements, or keywords that are not supported by the original resume."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        816,
+        112
+      ],
+      "id": "f0bafb31-188f-447e-a14a-579a103f96b2",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        320
+      ],
+      "id": "f929419a-adba-4566-b134-f1a13f5178c3",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "58zkmYMhV5CSQqbq",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "output",
+              "renameField": true,
+              "outputFieldName": "optimized_chunks"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        112
+      ],
+      "id": "7267ec42-f2ed-4073-addf-2a0ce73587be",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.optimized_chunks.join('\\n\\n') }}",
+        "options": {
+          "systemMessage": "=Optimized Resume Chunks:\n\n{{ $json.optimized_chunks.join('\\n\\n') }}\n\nTarget Job Description (optional):\n\n{{ $('On form submission').first().json[\"Job Description\"] }}\n\nCreate the final ATS-optimized resume using the optimized resume chunks.\n\nUse the job description only to improve relevance and keyword alignment.\nDo not invent or add any skills, experience, qualifications, achievements, metrics, or technologies that are not supported by the original resume."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1376,
+        112
+      ],
+      "id": "5dcd2e0d-964b-48ee-b0d1-81c9229dc235",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1328,
+        272
+      ],
+      "id": "6541aa75-eef9-4c03-8071-6e7d81530faf",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "58zkmYMhV5CSQqbq",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "markdownToHtml",
+        "markdown": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        1728,
+        112
+      ],
+      "id": "84a94a49-a214-449f-99e5-2c8247710897",
+      "name": "Markdown"
+    },
+    {
+      "parameters": {
+        "jsCode": "const markdown = $json.data || $json.output || \"\";\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n\n<style>\n\nbody{\nfont-family:Arial,Helvetica,sans-serif;\nmargin:40px;\nline-height:1.6;\ncolor:#222;\n}\n\nh1{\nfont-size:32px;\nborder-bottom:3px solid #0F62FE;\npadding-bottom:10px;\nmargin-bottom:25px;\n}\n\nh2{\ncolor:#0F62FE;\nmargin-top:30px;\nborder-bottom:1px solid #ddd;\npadding-bottom:5px;\n}\n\nstrong{\ncolor:#111;\n}\n\nul{\npadding-left:22px;\n}\n\nli{\nmargin-bottom:6px;\n}\n\n</style>\n\n</head>\n\n<body>\n\n${markdown}\n\n</body>\n\n</html>\n`;\n\nreturn [\n{\njson:{\nhtml\n}\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        112
+      ],
+      "id": "7927482f-81bd-4375-87d4-b491954daf54",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "html_content": "={{ $json.html }}",
+        "output_filename": "ATS_CV"
+      },
+      "type": "n8n-nodes-htmlcsstopdf.htmlcsstopdf",
+      "typeVersion": 1,
+      "position": [
+        2128,
+        128
+      ],
+      "id": "edb7a7a2-9c3e-4b24-8c17-5d412d879823",
+      "name": "Convert HTML to PDF",
+      "credentials": {
+        "htmlcsstopdfApi": {
+          "id": "YlHMz6FED40tmqEN",
+          "name": "HTML to PDF account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bc19a236-b845-4ebb-8615-e557ce011e7e",
+              "name": "pdf_url",
+              "value": "={{ $json.pdf_url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2336,
+        128
+      ],
+      "id": "f5754be4-6a86-4e2a-9fa4-48391cd5d86f",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Convert HTML to PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert HTML to PDF": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "b98cdc04-1800-4b76-8ad2-b8599f8713c8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a59a3d83df1ce8e0cd4162e5ca0d2425b5bc292b82efd0a639508704ff8d6ab4"
+  },
+  "nodeGroups": [],
+  "id": "kh6TtRCiHms4Dtz5",
+  "tags": [
+    {
+      "updatedAt": "2026-07-23T20:19:27.850Z",
+      "createdAt": "2026-07-23T20:19:27.850Z",
+      "id": "KIgmnEr1XsnquKds",
+      "name": "Project 8 - AI CV Genera"
+    }
+  ]
+}
